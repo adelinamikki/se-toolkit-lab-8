@@ -156,11 +156,39 @@ What specific score information are you looking for? For example:
 
 ## Task 2A — Deployed agent
 
+<<<<<<< HEAD
 
 
 ## Task 2B — Web client
 
 
+=======
+Nanobot gateway startup logs:
+
+```
+nanobot-1  | Using config: /app/nanobot/config.resolved.json
+nanobot-1  | 🐈 Starting nanobot gateway version 0.1.4.post5 on port 18790...
+nanobot-1  | ✓ Channels enabled: webchat
+nanobot-1  | ✓ Heartbeat: every 1800s
+nanobot-1  | MCP server 'lms': connected, 9 tools registered
+nanobot-1  | MCP server 'webchat': connected, 1 tools registered
+nanobot-1  | Agent loop started
+```
+
+## Task 2B — Web client
+
+WebSocket test — "What labs are available?":
+```json
+{"type":"text","content":"Here are the available labs:\n\n1. **Lab 01** – Products, Architecture & Roles\n2. **Lab 02** — Run, Fix, and Deploy a Backend Service\n3. **Lab 03** — Backend API: Explore, Debug, Implement, Deploy\n4. **Lab 04** — Testing, Front-end, and AI Agents\n5. **Lab 05** — Data Pipeline and Analytics Dashboard\n6. **Lab 06** — Build Your Own Agent\n7. **Lab 07** — Build a Client with an AI Coding Agent\n8. **Lab 08** – lab-08","format":"markdown"}
+```
+
+Structured UI test — "Show me the scores" (ambiguous query, renders choice UI instead of raw JSON):
+```json
+{"type":"choice","content":"","options":[{"label":"Lab 01 – Products, Architecture & Roles","value":"lab-01"},{"label":"Lab 02 — Run, Fix, and Deploy a Backend Service","value":"lab-02"},...]}
+```
+
+The Flutter web client is accessible at `http://<vm-ip>:42002/flutter`.
+>>>>>>> 62bc22aa (save work before rebase)
 
 ## Task 3A — Structured logging
 
