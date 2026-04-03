@@ -24,13 +24,202 @@ Uvicorn running on http://0.0.0.0:8080ы
 
 ## Task 3A — Structured logging
 
+### Happy-path log excerpt (request_started → request_completed, status 200)
 
+Triggered a request via `curl http://localhost:42002/items/ -H "Authorization: Bearer key8"` and inspected `docker compose --env-file .env.docker.secret logs backend --tail 50`:
+
+```
+backend-1  | 2026-04-03 20:42:50 INFO [lms_backend.main] [trace_id=81363b902bf1b3e9d568527fa1bd45ae] - request_started
+backend-1  | 2026-04-03 20:42:50 INFO [lms_backend.auth]  [trace_id=81363b902bf1b3e9d568527fa1bd45ae] - auth_success
+backend-1  | 2026-04-03 20:42:50 INFO [lms_backend.db.items] [trace_id=81363b902bf1b3e9d568527fa1bd45ae] - db_query
+backend-1  | 2026-04-03 20:42:50 INFO [lms_backend.main] [trace_id=81363b902bf1b3e9d568527fa1bd45ae] - request_completed
+backend-1  | INFO: 172.18.0.10:xxx - "GET /items/ HTTP/1.1" 200 OK
+```
+
+The request flowed through: `request_started` → `auth_success` → `db_query` → `request_completed` with HTTP 200. All entries share `trace_id=81363b902bf1b3e9d568527fa1bd45ae`.
+
+### Error-path log excerpt (db_query with error, status 404)
+
+Stopped PostgreSQL, triggered a request, then checked logs:
+
+```
+backend-1  | 2026-04-03 20:51:14 INFO  [lms_backend.main]  [trace_id=05b2bc314c40602f6e04cd8efb48852f] - request_started
+backend-1  | 2026-04-03 20:51:14 INFO  [lms_backend.auth]  [trace_id=05b2bc314c40602f6e04cd8efb48852f] - auth_success
+backend-1  | 2026-04-03 20:51:14 INFO  [lms_backend.db.items] [trace_id=05b2bc314c40602f6e04cd8efb48852f] - db_query
+backend-1  | 2026-04-03 20:51:14 ERROR [lms_backend.db.items] [trace_id=05b2bc314c40602f6e04cd8efb48852f] - db_query
+backend-1  | 2026-04-03 20:51:14 WARN  [lms_backend.routers.items] [trace_id=05b2bc314c40602f6e04cd8efb48852f] - items_list_failed_as_not_found
+backend-1  | 2026-04-03 20:51:14 INFO  [lms_backend.main]  [trace_id=05b2bc314c40602f6e04cd8efb48852f] - request_completed
+backend-1  | INFO: 172.18.0.10:xxx - "GET /items/ HTTP/1.1" 404 Not Found
+```
+
+The error appears at `db_query` with **ERROR** level — PostgreSQL connection failed. Request completed with HTTP 404. Trace ID: `05b2bc314c40602f6e04cd8efb48852f`.
+
+### VictoriaLogs API query output
+
+Queried VictoriaLogs directly: `POST http://localhost:42010/select/logsql/query` with `_time:1h service.name:"Learning Management Service"`:
+
+**Healthy trace logs (via VictoriaLogs API):**
+
+```
+2026-04-03T20:42:50 [INFO] event=request_completed status=200 trace_id=81363b902bf1b3e9d568527fa1bd45ae
+2026-04-03T20:42:50 [INFO] event=db_query        trace_id=81363b902bf1b3e9d568527fa1bd45ae
+2026-04-03T20:42:50 [INFO] event=auth_success     trace_id=81363b902bf1b3e9d568527fa1bd45ae
+2026-04-03T20:42:50 [INFO] event=request_started  trace_id=81363b902bf1b3e9d568527fa1bd45ae
+```
+
+**Error trace logs (via VictoriaLogs API):**
+
+```
+2026-04-03T20:51:14 [INFO]  event=request_started             trace_id=05b2bc314c40602f6e04cd8efb48852f
+2026-04-03T20:51:14 [INFO]  event=auth_success                trace_id=05b2bc314c40602f6e04cd8efb48852f
+2026-04-03T20:51:14 [INFO]  event=db_query                    trace_id=05b2bc314c40602f6e04cd8efb48852f
+2026-04-03T20:51:14 [ERROR] event=db_query                    trace_id=05b2bc314c40602f6e04cd8efb48852f
+  error=(sqlalchemy.dialects.postgresql.asyncpg.InterfaceError): connection is closed
+  [SQL: SELECT item.id, item.type, item.parent_id, item.title, item.description, item.attributes, item.created_at FROM item]
+2026-04-03T20:51:14 [WARN]  event=items_list_failed_as_not_found trace_id=05b2bc314c40602f6e04cd8efb48852f
+2026-04-03T20:51:14 [INFO]  event=request_completed status=404 trace_id=05b2bc314c40602f6e04cd8efb48852f
+```
+
+### VictoriaLogs query for errors
+
+Query: `_time:1h service.name:"Learning Management Service" severity:ERROR`
+
+VictoriaLogs returned the `db_query` error entry with the full SQLAlchemy/asyncpg connection-closed message. Filtering by `service.name`, `severity`, and `_time` in VictoriaLogs is significantly faster than grepping through `docker compose logs`.
+
+**Structured JSON from VictoriaLogs API (error entry):**
+
+```json
+{
+  "_msg": "db_query",
+  "_time": "2026-04-03T20:51:14.597Z",
+  "event": "db_query",
+  "severity": "ERROR",
+  "service.name": "Learning Management Service",
+  "trace_id": "05b2bc314c40602f6e04cd8efb48852f",
+  "span_id": "ac5711a56304f545",
+  "error": "(sqlalchemy.dialects.postgresql.asyncpg.InterfaceError): connection is closed",
+  "operation": "select",
+  "table": "item"
+}
+```
 
 ## Task 3B — Traces
 
+### Healthy trace (VictoriaTraces API)
 
+Queried: `GET http://localhost:42011/select/jaeger/api/traces/81363b902bf1b3e9d568527fa1bd45ae`
+
+```
+Trace 81363b902bf1b3e9d568527fa1bd45ae (8 spans):
+
+[Learning Management Service] GET /items/ — 70498ms
+  └─ [Learning Management Service] SELECT db-lab-8 — 17458ms
+  └─ [Learning Management Service] GET /items/ http send — 51ms
+  └─ [Learning Management Service] GET /items/ http send — 31ms
+  └─ [Learning Management Service] GET /items/ http send — 16ms
+  └─ [Learning Management Service] connect — 46509ms
+  └─ [Learning Management Service] BEGIN; — 450ms
+  └─ [Learning Management Service] ROLLBACK; — 321ms
+```
+
+All spans belong to the "Learning Management Service" process. Clean flow: HTTP request → DB connect → SELECT → response. **No errors.**
+
+### Error trace (VictoriaTraces API)
+
+Queried: `GET http://localhost:42011/select/jaeger/api/traces/05b2bc314c40602f6e04cd8efb48852f`
+
+```
+Trace 05b2bc314c40602f6e04cd8efb48852f (6 spans):
+
+[Learning Management Service] GET /items/ — 4620ms
+  └─ [Learning Management Service] SELECT db-lab-8 — 200ms **ERROR**
+       db.statement=SELECT item.id, item.type, item.parent_id, item.title, item.description, item.attributes, item.creat...
+       error=true
+  └─ [Learning Management Service] GET /items/ http send — 43ms
+  └─ [Learning Management Service] GET /items/ http send — 23ms
+  └─ [Learning Management Service] GET /items/ http send — 11ms
+  └─ [Learning Management Service] connect — 134ms
+```
+
+**Difference from healthy trace:** The `SELECT db-lab-8` span is marked **ERROR** with `error=true`. The root span completed in 4620ms vs 70498ms (healthy) because the DB query failed immediately instead of waiting for a connection. The error is in the `SELECT db-lab-8` span — SQLAlchemy could not connect to PostgreSQL.
+
+### Trace comparison
+
+| Field | Healthy | Error |
+|-------|---------|-------|
+| Trace ID | `81363b...45ae` | `05b2bc...852f` |
+| Spans | 8 | 6 |
+| Root duration | 70498ms | 4620ms |
+| SELECT span | 17458ms (OK) | 200ms (**ERROR**) |
+| HTTP status | 200 | 404 |
 
 ## Task 3C — Observability MCP tools
+
+### Files created/modified
+
+| File | Purpose |
+|------|---------|
+| `mcp/mcp-obs/src/mcp_obs/server.py` | MCP stdio server with 4 tools registered |
+| `mcp/mcp-obs/src/mcp_obs/tools.py` | Tool schemas + handlers: `logs_search`, `logs_error_count`, `traces_list`, `traces_get` |
+| `mcp/mcp-obs/src/mcp_obs/observability.py` | `VictoriaLogsClient` and `VictoriaTracesClient` HTTP wrappers |
+| `mcp/mcp-obs/src/mcp_obs/settings.py` | Settings resolution from `NANOBOT_VICTORIALOGS_URL` / `NANOBOT_VICTORIATRACES_URL` |
+| `nanobot/workspace/skills/observability/SKILL.md` | Skill prompt teaching the agent when/how to use observability tools |
+| `pyproject.toml` | Uncommented `mcp/mcp-obs` workspace member and source |
+| `docker-compose.yml` | Uncommented `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` env vars for nanobot |
+| `nanobot/config.json` | MCP server `obs` config with Docker service URLs |
+
+### MCP tools registered
+
+| Tool | API | Description |
+|------|-----|-------------|
+| `logs_search` | VictoriaLogs `/select/logsql/query` | Search structured logs via LogsQL |
+| `logs_error_count` | VictoriaLogs `/select/logsql/query` | Count errors per service over time window |
+| `traces_list` | VictoriaTraces `/select/jaeger/api/traces` | List recent traces |
+| `traces_get` | VictoriaTraces `/select/jaeger/api/traces/<id>` | Fetch trace by ID with span hierarchy |
+
+### CLI verification of MCP tools
+
+```
+$ uv run python -c "from mcp_obs.observability import VictoriaLogsClient; ..."
+Error count: [{'service': 'Learning Management Service', 'error_count': 1}]
+Logs found: 1
+```
+
+The MCP tools successfully query VictoriaLogs and return structured results.
+
+### Observability skill
+
+`nanobot/workspace/skills/observability/SKILL.md` teaches the agent:
+- When user asks about errors → call `logs_error_count` first, then `logs_search` to drill down, then `traces_get` if a trace_id appears
+- When user asks about a specific trace → call `traces_get` directly, or use `logs_search` to find trace_id first
+- Never dump raw JSON — summarize in plain language
+- Use narrow time windows (`_time:10m`) for recent troubleshooting
+
+### Agent response — Normal conditions
+
+Asked the agent: **"Any LMS backend errors in the last 10 minutes?"** (all services healthy)
+
+*[Insert screenshot from webchat after asking this question]*
+
+Expected agent flow:
+1. `logs_error_count(time_window="10m", service="Learning Management Service")` → 0 errors
+2. Responds: no recent errors, LMS backend is healthy
+
+### Agent response — Failure conditions
+
+1. Stopped PostgreSQL: `docker compose --env-file .env.docker.secret stop postgres`
+2. Triggered requests to generate errors
+3. Asked: **"Any LMS backend errors in the last 10 minutes?"**
+
+*[Insert screenshot from webchat after asking this question]*
+
+Expected agent flow:
+1. `logs_error_count` → finds errors in Learning Management Service
+2. `logs_search` with `_time:10m service.name:"Learning Management Service" severity:ERROR` → finds db_query error with trace_id
+3. `traces_get` with the trace_id → shows span hierarchy with DB connection error
+4. Summarizes: which service failed, what the error was, trace ID
+
+Restarted PostgreSQL: `docker compose --env-file .env.docker.secret start postgres`
 
 
 
