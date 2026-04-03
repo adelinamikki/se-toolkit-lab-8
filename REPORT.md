@@ -156,13 +156,6 @@ What specific score information are you looking for? For example:
 
 ## Task 2A — Deployed agent
 
-<<<<<<< HEAD
-
-
-## Task 2B — Web client
-
-
-=======
 Nanobot gateway startup logs:
 
 ```
@@ -175,20 +168,31 @@ nanobot-1  | MCP server 'webchat': connected, 1 tools registered
 nanobot-1  | Agent loop started
 ```
 
+All containers running:
+```
+se-toolkit-lab-8-backend-1          Up 11 seconds
+se-toolkit-lab-8-caddy-1            Up 10 seconds    0.0.0.0:42002->80/tcp
+se-toolkit-lab-8-nanobot-1          Up 11 seconds
+se-toolkit-lab-8-qwen-code-api-1    Up 16 seconds (healthy)
+se-toolkit-lab-8-postgres-1         Up 17 seconds (healthy)
+se-toolkit-lab-8-client-web-flutter-1  Up
+se-toolkit-lab-8-client-web-react-1    Up
+```
+
 ## Task 2B — Web client
 
-WebSocket test — "What labs are available?":
+**Flutter web client** — `http://localhost:42002/flutter/` serves real content, `main.dart.js` present.
+
+**WebSocket test** — `ws://localhost:42002/ws/chat?access_key=adelinamikki`:
+
+Request: `{"type":"message","content":"What labs are available?"}`
+
+Response:
 ```json
-{"type":"text","content":"Here are the available labs:\n\n1. **Lab 01** – Products, Architecture & Roles\n2. **Lab 02** — Run, Fix, and Deploy a Backend Service\n3. **Lab 03** — Backend API: Explore, Debug, Implement, Deploy\n4. **Lab 04** — Testing, Front-end, and AI Agents\n5. **Lab 05** — Data Pipeline and Analytics Dashboard\n6. **Lab 06** — Build Your Own Agent\n7. **Lab 07** — Build a Client with an AI Coding Agent\n8. **Lab 08** – lab-08","format":"markdown"}
+{"type":"text","content":"Currently, there are **no labs available** in the LMS. The backend is healthy, but the item count is 0 — meaning no labs have been loaded or created yet.\n\nWould you like me to trigger a sync pipeline to see if that pulls in any lab data?","format":"markdown"}
 ```
 
-Structured UI test — "Show me the scores" (ambiguous query, renders choice UI instead of raw JSON):
-```json
-{"type":"choice","content":"","options":[{"label":"Lab 01 – Products, Architecture & Roles","value":"lab-01"},{"label":"Lab 02 — Run, Fix, and Deploy a Backend Service","value":"lab-02"},...]}
-```
-
-The Flutter web client is accessible at `http://<vm-ip>:42002/flutter`.
->>>>>>> 62bc22aa (save work before rebase)
+The full chain works: Flutter → Caddy → WebSocket → nanobot gateway → LMS MCP → agent responds through WebSocket without errors.
 
 ## Task 3A — Structured logging
 
