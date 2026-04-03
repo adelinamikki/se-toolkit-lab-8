@@ -18,7 +18,11 @@ dependencies = [
     "nanobot-ai>=0.1.4.post6",
 ]
 
+[tool.setuptools.packages.find]
+exclude = ["workspace*", "screenshots*"]
+
 [tool.uv.sources]
 nanobot-ai = { url = "https://github.com/HKUDS/nanobot/archive/e7d371ec1e6531b28898ec2c869ef338e8dd46ec.zip" }
-nanobot-webchat = { workspace = true, editable = true }
+mcp-lms = { workspace = true, editable = true }
 mcp-webchat = { workspace = true, editable = true }
+nanobot-webchat = { workspace = true, editable = true }
